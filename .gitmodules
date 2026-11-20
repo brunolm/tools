@@ -1,0 +1,12 @@
+[submodule "disk-cleanup"]
+	path = disk-cleanup
+	url = https://github.com/brunolm/disk-cleanup.git
+	branch = main
+[submodule "filefinder"]
+	path = filefinder
+	url = https://github.com/brunolm/filefinder.git
+	branch = main
+[submodule "extract-images-from-video"]
+	path = extract-images-from-video
+	url = https://github.com/brunolm/extract-images-from-video.git
+	branch = main
