@@ -1,0 +1,20 @@
+[package]
+name = "temp-monitor"
+version = "0.1.0"
+edition = "2024"
+description = "Windows desktop app that shows CPU and GPU temperatures"
+readme = "README.md"
+keywords = ["temperature", "cpu", "gpu", "windows", "egui"]
+categories = ["hardware-support"]
+publish = false
+
+[dependencies]
+eframe = "0.37.0"
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_Memory", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging", "Wdk_Graphics_Direct3D"] }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
