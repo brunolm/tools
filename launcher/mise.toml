@@ -1,0 +1,14 @@
+[tools]
+rust = { version = "1.98.1", components = "clippy,rustfmt" }
+
+[tasks.build]
+description = "Build the optimized app (target/release/tools.exe)"
+run = "cargo build --release"
+
+[tasks.run]
+description = "Build and start the app"
+run = "cargo run --release"
+
+[tasks.lint]
+description = "Check formatting and clippy lints"
+run = ["cargo fmt --check", "cargo clippy --release --all-targets -- -D warnings"]
