@@ -1,9 +1,9 @@
-use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use eframe::egui::{self, Color32, ProgressBar, RichText, Ui};
 
-use crate::{cpu, gpu};
+use crate::cpu::{self, CoreKind};
+use crate::{gpu, pawnio};
 
 const REFRESH: Duration = Duration::from_secs(1);
 const GPU_BAR_MAX_C: f32 = 100.0;
@@ -11,19 +11,19 @@ const WARM_C: f32 = 60.0;
 const HOT_C: f32 = 80.0;
 
 pub struct App {
-    cpus: Option<Vec<cpu::CpuReading>>,
+    cpu: Result<cpu::Monitor, cpu::Error>,
+    cpu_reading: Option<cpu::CpuReading>,
     gpus: Vec<gpu::GpuReading>,
     last_refresh: Option<Instant>,
-    core_temp_exe: Option<PathBuf>,
 }
 
 impl App {
     pub fn new() -> Self {
         Self {
-            cpus: None,
+            cpu: cpu::Monitor::open(),
+            cpu_reading: None,
             gpus: Vec::new(),
             last_refresh: None,
-            core_temp_exe: cpu::core_temp_exe(),
         }
     }
 
@@ -31,34 +31,22 @@ impl App {
         if self.last_refresh.is_some_and(|t| t.elapsed() < REFRESH) {
             return;
         }
-        self.cpus = cpu::read();
+        if self.cpu.is_err() {
+            self.cpu = cpu::Monitor::open();
+        }
+        self.cpu_reading = self.cpu.as_ref().ok().map(cpu::Monitor::read);
         self.gpus = gpu::read();
         self.last_refresh = Some(Instant::now());
     }
 
     fn cpu_section(&self, ui: &mut Ui) {
         ui.heading("CPU");
-        let Some(cpus) = &self.cpus else {
-            self.core_temp_missing(ui);
+        if let Err(e) = &self.cpu {
+            cpu_unavailable(ui, e);
             return;
-        };
-        for (i, reading) in cpus.iter().enumerate() {
-            cpu_package(ui, i, reading);
         }
-    }
-
-    fn core_temp_missing(&self, ui: &mut Ui) {
-        ui.label("CPU temperatures come from Core Temp, which isn't running.");
-        match &self.core_temp_exe {
-            Some(exe) => {
-                if ui.button("Start Core Temp").clicked() {
-                    cpu::start_core_temp(exe);
-                }
-            }
-            None => {
-                ui.label("Install it with:");
-                ui.code("winget install ALCPU.CoreTemp");
-            }
+        if let Some(reading) = &self.cpu_reading {
+            cpu_package(ui, reading);
         }
     }
 
@@ -101,26 +89,43 @@ impl eframe::App for App {
     }
 }
 
-fn cpu_package(ui: &mut Ui, index: usize, reading: &cpu::CpuReading) {
+fn cpu_unavailable(ui: &mut Ui, error: &cpu::Error) {
+    ui.label(error.to_string());
+    if matches!(error, cpu::Error::PawnIo(pawnio::Error::NotInstalled)) {
+        ui.label("Install it, and the CPU temperatures will show up here:");
+        ui.code("winget install namazso.PawnIO");
+    }
+}
+
+fn cpu_package(ui: &mut Ui, reading: &cpu::CpuReading) {
+    ui.label(RichText::new(&reading.name).strong());
     ui.horizontal(|ui| {
-        ui.label(RichText::new(&reading.name).strong());
         if let Some(hottest) = reading.hottest_c() {
             ui.label(
                 RichText::new(format!("{hottest:.0} °C"))
                     .size(22.0)
                     .color(temp_color(hottest)),
             );
+            ui.weak("hottest core");
+        }
+        if let Some(package) = reading.package_c {
+            ui.label(format!("Package {package:.0} °C"));
         }
         ui.weak(format!("TjMax {:.0} °C", reading.tj_max_c));
     });
-    egui::Grid::new(("cores", index))
+    egui::Grid::new("cores")
         .num_columns(3)
         .spacing([12.0, 4.0])
         .show(ui, |ui| {
-            for (core, c) in reading.cores.iter().enumerate() {
-                ui.label(format!("Core #{core}"));
-                temp_bar(ui, c.temp_c, reading.tj_max_c);
-                ui.weak(format!("{:>3}% load", c.load_pct));
+            for (i, core) in reading.cores.iter().enumerate() {
+                ui.label(format!("Core #{i}"));
+                ui.weak(kind_label(core.kind));
+                match core.temp_c {
+                    Some(t) => temp_bar(ui, t, reading.tj_max_c),
+                    None => {
+                        ui.weak("no reading");
+                    }
+                }
                 ui.end_row();
             }
         });
@@ -143,5 +148,13 @@ fn temp_color(temp_c: f32) -> Color32 {
         Color32::from_rgb(0xff, 0xb3, 0x00)
     } else {
         Color32::from_rgb(0xe5, 0x39, 0x35)
+    }
+}
+
+fn kind_label(kind: CoreKind) -> &'static str {
+    match kind {
+        CoreKind::Performance => "P",
+        CoreKind::Efficient => "E",
+        CoreKind::Uniform => "",
     }
 }
